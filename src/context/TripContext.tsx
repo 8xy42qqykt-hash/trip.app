@@ -16,6 +16,7 @@ interface TripContextType {
   updateTrip: (updates: { name?: string; start_date?: string; end_date?: string }) => Promise<{ error?: string }>;
   selectTrip: (trip: Trip) => void;
   exitTrip: () => void;
+  removeMember: (userId: string) => Promise<{ error?: string }>;
   loadUserTrips: () => Promise<Trip[]>;
   // Messages & Reactions
   messages: Message[];
@@ -550,6 +551,29 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     await loadUserTrips();
     return {};
+  };
+
+  const removeMember = async (userId: string): Promise<{ error?: string }> => {
+    if (!currentTrip || !user) return { error: 'Not authenticated' };
+    try {
+      if (isCloudActive && supabase) {
+        const { error } = await supabase
+          .from('trip_members')
+          .delete()
+          .eq('trip_id', currentTrip.id)
+          .eq('user_id', userId);
+        if (error) return { error: error.message };
+      } else {
+        const all: TripMember[] = JSON.parse(localStorage.getItem('trip_local_members') || '[]');
+        const filtered = all.filter((m) => !(m.trip_id === currentTrip.id && m.user_id === userId));
+        localStorage.setItem('trip_local_members', JSON.stringify(filtered));
+        broadcastSync('member_removed', { tripId: currentTrip.id, userId });
+      }
+      await refreshData();
+      return {};
+    } catch (err: any) {
+      return { error: err?.message || 'Failed to remove member' };
+    }
   };
 
   // --- MESSAGES ---
@@ -1255,6 +1279,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateTrip,
         selectTrip,
         exitTrip,
+        removeMember,
         loadUserTrips,
         messages,
         sendMessage,

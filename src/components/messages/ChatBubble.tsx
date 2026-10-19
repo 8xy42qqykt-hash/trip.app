@@ -35,6 +35,28 @@ const REACTION_ICON_MAP: Record<Reaction['kind'], React.ComponentType<any>> = {
   Question,
 };
 
+const renderContentWithMentions = (content: string, isOwnBubble: boolean) => {
+  if (!content) return null;
+  const parts = content.split(/(@[^\s@]+)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('@')) {
+      return (
+        <span
+          key={index}
+          className={`font-semibold inline-block rounded px-1 -mx-0.5 ${
+            isOwnBubble
+              ? 'bg-white/25 text-white underline decoration-white/40'
+              : 'bg-[#0A84FF]/25 text-[#70baff] font-bold'
+          }`}
+        >
+          {part}
+        </span>
+      );
+    }
+    return part;
+  });
+};
+
 export const ChatBubble: React.FC<ChatBubbleProps> = ({
   message,
   isOwn,
@@ -242,7 +264,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
               />
               {message.content && (
                 <p className="text-base px-1.5 text-white whitespace-pre-wrap break-words">
-                  {message.content}
+                  {renderContentWithMentions(message.content, isOwn)}
                 </p>
               )}
             </div>
@@ -281,7 +303,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                   <PollResultMessage metadata={message.metadata} isOwn={isOwn} />
                 ) : (
                   <p className="whitespace-pre-wrap break-words">
-                    {message.content}
+                    {renderContentWithMentions(message.content, isOwn)}
                   </p>
                 )}
               </div>

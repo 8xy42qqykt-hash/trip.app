@@ -6,19 +6,30 @@ import {
   SignOut,
   CalendarBlank,
   ArrowsLeftRight,
+  PaperPlaneTilt,
+  Trash,
+  ShieldCheck,
+  User,
+  X,
 } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext';
 import { useTrip } from '../../context/TripContext';
+import { TripMember } from '../../types';
 import { Avatar } from '../common/Avatar';
 import { DatePickerModal } from '../common/DatePickerModal';
+import { BottomSheet } from '../common/BottomSheet';
 import { formatTripDate } from '../../utils/date';
 import { uploadAsset } from '../../lib/supabase';
 import { PWAInstallPrompt } from '../common/PWAInstallPrompt';
 import { CollapsingHeaderLayout } from '../common/CollapsingHeaderLayout';
 
-export const SettingsView: React.FC = () => {
+interface SettingsViewProps {
+  onNavigateToMessages?: (mentionName?: string) => void;
+}
+
+export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateToMessages }) => {
   const { user, profile, updateProfile, signOut } = useAuth();
-  const { currentTrip, tripMembers, isOwner, updateTrip, exitTrip } = useTrip();
+  const { currentTrip, tripMembers, isOwner, updateTrip, exitTrip, removeMember } = useTrip();
 
   // Avatar upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -37,6 +48,16 @@ export const SettingsView: React.FC = () => {
 
   // Copy code feedback
   const [copiedCode, setCopiedCode] = useState(false);
+
+  // Member details sheet
+  const [selectedMember, setSelectedMember] = useState<TripMember | null>(null);
+  const [copiedMemberName, setCopiedMemberName] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
+
+  // Long press refs
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const didLongPressRef = useRef(false);
 
   if (!currentTrip) return null;
 
@@ -77,25 +98,83 @@ export const SettingsView: React.FC = () => {
     setTimeout(() => setSavedTripNotice(false), 2000);
   };
 
+  const openMemberSheet = (m: TripMember) => {
+    setSelectedMember(m);
+    setCopiedMemberName(false);
+    setConfirmRemove(false);
+  };
+
+  const handleMemberPointerDown = (m: TripMember) => {
+    didLongPressRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      didLongPressRef.current = true;
+      openMemberSheet(m);
+    }, 320);
+  };
+
+  const handleMemberPointerUp = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleMemberClick = (m: TripMember) => {
+    // Allows opening via click or after long press release
+    openMemberSheet(m);
+  };
+
+  const handleCopyMemberName = () => {
+    if (!selectedMember) return;
+    const name = selectedMember.profile?.display_name || 'Member';
+    navigator.clipboard.writeText(name);
+    setCopiedMemberName(true);
+    setTimeout(() => setCopiedMemberName(false), 2000);
+  };
+
+  const handleChatWithMember = () => {
+    if (!selectedMember) return;
+    const name = selectedMember.profile?.display_name || 'Member';
+    setSelectedMember(null);
+    if (onNavigateToMessages) {
+      onNavigateToMessages(name);
+    }
+  };
+
+  const handleRemoveMember = async () => {
+    if (!selectedMember) return;
+    setIsRemoving(true);
+    try {
+      await removeMember(selectedMember.user_id);
+      setSelectedMember(null);
+    } catch (err) {
+      console.warn('Failed to remove member:', err);
+    } finally {
+      setIsRemoving(false);
+      setConfirmRemove(false);
+    }
+  };
+
   return (
     <CollapsingHeaderLayout title="Settings">
-      <div className="space-y-6 pb-8 animate-calm-fade-in">
-        {/* User Profile Header */}
-        <div className="flex flex-col items-center gap-2 pt-1 pb-1">
-          <div className="relative">
+      <div className="space-y-6 pt-2 pb-24">
+        {/* User Profile Header - Clean without panel */}
+        <div className="flex flex-col items-center text-center pt-2">
+          <div className="relative mb-3">
             <Avatar
               name={profile?.display_name}
               avatarUrl={profile?.avatar_url}
               color={profile?.color}
-              size={80}
+              size={84}
             />
             <button
               type="button"
               disabled={uploadingAvatar}
               onClick={() => fileInputRef.current?.click()}
-              className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-[#2c2c2e] border border-white/20 text-white shadow-lg flex items-center justify-center active:scale-90 cursor-pointer transition-transform"
+              className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-[#0A84FF] text-white flex items-center justify-center border-2 border-black active:scale-90 cursor-pointer shadow-md transition-transform"
+              title="Change avatar"
             >
-              <Camera size={16} weight="bold" />
+              <Camera size={15} weight="bold" />
             </button>
             <input
               type="file"
@@ -178,20 +257,23 @@ export const SettingsView: React.FC = () => {
           <div className="text-xs font-bold text-slate-400 px-2">
             Invite Code
           </div>
-          <div className="py-2.5 px-2 flex items-center justify-between border-b border-white/[0.08]">
+          <div className="flex items-center justify-between py-2 px-2">
             <div>
-              <div className="text-2xl font-extrabold tracking-widest text-white">
+              <span className="text-2xl font-mono font-extrabold tracking-widest text-white">
                 {currentTrip.invite_code}
-              </div>
+              </span>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Share this code with friends to join
+              </p>
             </div>
             <button
               type="button"
               onClick={handleCopyCode}
-              className="h-9 px-4 rounded-full bg-[#0A84FF] text-white flex items-center gap-1.5 text-xs font-bold active-press cursor-pointer shadow-sm hover:bg-[#007AFF] transition-colors"
+              className="px-4 py-2 rounded-full bg-white/10 active:bg-white/20 text-white font-semibold text-xs flex items-center gap-1.5 active-press cursor-pointer transition-colors"
             >
               {copiedCode ? (
                 <>
-                  <Check size={14} weight="bold" />
+                  <Check size={14} weight="bold" className="text-emerald-400" />
                   <span>Copied</span>
                 </>
               ) : (
@@ -204,27 +286,22 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Trip Details (Owner Only) - Clean unboxed inputs */}
+        {/* Owner Trip Details Editor - Clean without border panels */}
         {isOwner && (
-          <div className="space-y-2">
+          <div className="space-y-3 pt-1">
             <div className="text-xs font-bold text-slate-400 px-2">
-              Trip Details
+              Trip Details (Owner)
             </div>
             <div className="space-y-3 px-1">
               <div>
+                <label className="text-xs font-medium text-slate-400 block mb-1">
+                  Trip Name
+                </label>
                 <input
                   type="text"
-                  inputMode="text"
-                  enterKeyHint="done"
-                  placeholder="Trip name"
                   value={tripName}
                   onChange={(e) => setTripName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleSaveTrip();
-                    }
-                  }}
+                  placeholder="e.g. Hawaii Summer 2026"
                   className="w-full h-12 px-3.5 rounded-[16px] bg-white/10 text-white text-[16px] outline-none"
                 />
               </div>
@@ -232,18 +309,28 @@ export const SettingsView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setActiveDatePicker('start')}
-                  className="w-full h-12 px-3 rounded-[16px] bg-white/10 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 active-press cursor-pointer"
+                  className="h-12 px-3.5 rounded-[16px] bg-white/10 text-left flex items-center justify-between active:bg-white/15 cursor-pointer transition-colors"
                 >
-                  <CalendarBlank size={15} weight="regular" />
-                  <span>{formatTripDate(startDate)}</span>
+                  <div className="truncate">
+                    <span className="text-[10px] text-slate-400 block leading-tight">Start Date</span>
+                    <span className="text-xs font-semibold text-white">
+                      {startDate ? formatTripDate(startDate) : 'Select'}
+                    </span>
+                  </div>
+                  <CalendarBlank size={16} className="text-slate-400 shrink-0" />
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveDatePicker('end')}
-                  className="w-full h-12 px-3 rounded-[16px] bg-white/10 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 active-press cursor-pointer"
+                  className="h-12 px-3.5 rounded-[16px] bg-white/10 text-left flex items-center justify-between active:bg-white/15 cursor-pointer transition-colors"
                 >
-                  <CalendarBlank size={15} weight="regular" />
-                  <span>{formatTripDate(endDate)}</span>
+                  <div className="truncate">
+                    <span className="text-[10px] text-slate-400 block leading-tight">End Date</span>
+                    <span className="text-xs font-semibold text-white">
+                      {endDate ? formatTripDate(endDate) : 'Select'}
+                    </span>
+                  </div>
+                  <CalendarBlank size={16} className="text-slate-400 shrink-0" />
                 </button>
               </div>
               <div>
@@ -278,33 +365,49 @@ export const SettingsView: React.FC = () => {
           </div>
         )}
 
-        {/* Members - Clean divided list without panel */}
+        {/* Members - Clean divided list with Long-Click & Tap interactions */}
         <div className="space-y-1.5">
-          <div className="text-xs font-bold text-slate-400 px-2">
-            Members ({tripMembers.length})
+          <div className="text-xs font-bold text-slate-400 px-2 flex items-center justify-between">
+            <span>Members ({tripMembers.length})</span>
+            <span className="text-[11px] text-slate-500 font-normal">Tap or hold to inspect</span>
           </div>
           <div className="divide-y divide-white/[0.08] overflow-hidden">
             {tripMembers.map((m) => (
               <div
                 key={m.user_id}
-                className="flex items-center justify-between min-h-[50px] px-2 py-2"
+                onPointerDown={() => handleMemberPointerDown(m)}
+                onPointerUp={handleMemberPointerUp}
+                onPointerCancel={handleMemberPointerUp}
+                onClick={() => handleMemberClick(m)}
+                className="flex items-center justify-between min-h-[52px] px-2 py-2.5 cursor-pointer active:bg-white/10 rounded-xl transition-all"
+                title="Tap or hold for member profile"
               >
                 <div className="flex items-center gap-3">
                   <Avatar
                     name={m.profile?.display_name}
                     avatarUrl={m.profile?.avatar_url}
                     color={m.profile?.color}
-                    size={34}
+                    size={36}
                   />
-                  <span className="text-sm font-semibold text-white">
-                    {m.profile?.display_name || 'Member'}
-                    {user?.id === m.user_id && ' (You)'}
-                  </span>
+                  <div>
+                    <div className="text-sm font-semibold text-white flex items-center gap-1.5">
+                      <span>{m.profile?.display_name || 'Member'}</span>
+                      {user?.id === m.user_id && (
+                        <span className="text-[11px] text-slate-400 font-normal">(You)</span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      {m.role === 'owner' ? 'Trip Organizer' : 'Member'}
+                    </div>
+                  </div>
                 </div>
-                {m.role === 'owner' && (
-                  <span className="text-[11px] font-bold text-[#0A84FF] bg-[#0A84FF]/20 px-2.5 py-0.5 rounded-full">
-                    Owner
+                {m.role === 'owner' ? (
+                  <span className="text-[11px] font-bold text-[#0A84FF] bg-[#0A84FF]/20 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <ShieldCheck size={12} weight="bold" />
+                    <span>Owner</span>
                   </span>
+                ) : (
+                  <span className="text-xs text-slate-500">View</span>
                 )}
               </div>
             ))}
@@ -328,6 +431,136 @@ export const SettingsView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Member Profile Bottom Sheet */}
+      <BottomSheet
+        isOpen={Boolean(selectedMember)}
+        onClose={() => {
+          setSelectedMember(null);
+          setConfirmRemove(false);
+        }}
+      >
+        {selectedMember && (
+          <div className="p-5 flex flex-col items-center text-center">
+            {/* Large Avatar */}
+            <div className="mb-3.5 relative">
+              <Avatar
+                name={selectedMember.profile?.display_name}
+                avatarUrl={selectedMember.profile?.avatar_url}
+                color={selectedMember.profile?.color}
+                size={72}
+              />
+            </div>
+
+            {/* Name & Role */}
+            <h3 className="text-xl font-bold text-white mb-1">
+              {selectedMember.profile?.display_name || 'Member'}
+            </h3>
+
+            <div className="flex items-center gap-1.5 mb-6">
+              {selectedMember.role === 'owner' ? (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#0A84FF] bg-[#0A84FF]/15 px-3 py-1 rounded-full">
+                  <ShieldCheck size={14} weight="bold" />
+                  <span>Trip Owner</span>
+                </span>
+              ) : (
+                <span className="text-xs font-medium text-slate-400 bg-white/10 px-3 py-1 rounded-full">
+                  Trip Member
+                </span>
+              )}
+              {user?.id === selectedMember.user_id && (
+                <span className="text-xs font-semibold text-emerald-400 bg-emerald-500/15 px-2.5 py-1 rounded-full">
+                  You
+                </span>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="w-full space-y-2.5 mb-2">
+              {/* Chat / Mention */}
+              <button
+                type="button"
+                onClick={handleChatWithMember}
+                className="w-full h-12 rounded-[18px] bg-[#0A84FF] hover:bg-[#007AFF] text-white font-semibold text-sm flex items-center justify-center gap-2.5 active-press cursor-pointer transition-colors"
+              >
+                <PaperPlaneTilt size={18} weight="bold" />
+                <span>Send Message / Mention</span>
+              </button>
+
+              {/* Copy Name */}
+              <button
+                type="button"
+                onClick={handleCopyMemberName}
+                className="w-full h-12 rounded-[18px] bg-white/10 hover:bg-white/15 text-white font-semibold text-sm flex items-center justify-center gap-2.5 active-press cursor-pointer transition-colors"
+              >
+                {copiedMemberName ? (
+                  <>
+                    <Check size={18} weight="bold" className="text-emerald-400" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy size={18} weight="bold" />
+                    <span>Copy Name</span>
+                  </>
+                )}
+              </button>
+
+              {/* Owner actions: Remove Member */}
+              {isOwner && user?.id !== selectedMember.user_id && (
+                <div className="pt-2">
+                  {confirmRemove ? (
+                    <div className="p-3.5 rounded-[18px] bg-red-500/15 border border-red-500/20 text-left space-y-3">
+                      <div className="text-xs text-red-300">
+                        Remove <strong className="text-white">{selectedMember.profile?.display_name}</strong> from this trip? They will lose access to all trip data.
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={isRemoving}
+                          onClick={handleRemoveMember}
+                          className="flex-1 h-10 rounded-[14px] bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 active-press cursor-pointer"
+                        >
+                          <Trash size={14} weight="bold" />
+                          <span>{isRemoving ? 'Removing...' : 'Yes, Remove'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRemove(false)}
+                          className="px-4 h-10 rounded-[14px] bg-white/10 text-slate-300 text-xs font-semibold active-press cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmRemove(true)}
+                      className="w-full h-12 rounded-[18px] bg-red-500/10 hover:bg-red-500/20 text-red-400 font-semibold text-sm flex items-center justify-center gap-2 active-press cursor-pointer transition-colors"
+                    >
+                      <Trash size={18} weight="bold" />
+                      <span>Remove from Trip</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMember(null);
+                setConfirmRemove(false);
+              }}
+              className="mt-3 text-xs font-semibold text-slate-400 hover:text-white py-2 px-4 cursor-pointer"
+            >
+              Done
+            </button>
+          </div>
+        )}
+      </BottomSheet>
     </CollapsingHeaderLayout>
   );
 };

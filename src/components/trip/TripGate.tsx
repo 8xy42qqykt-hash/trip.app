@@ -67,7 +67,7 @@ export const TripGate: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col justify-start px-5 pt-10 pb-8 max-w-lg mx-auto bg-black text-white select-none pt-safe pb-safe">
+    <div className="h-full w-full overflow-y-auto flex flex-col justify-start px-5 pt-8 pb-12 max-w-lg mx-auto bg-black text-white select-none pt-safe pb-safe">
       {/* Header with NO logo icon box and NO trip count text */}
       <div className="flex items-center justify-between mb-7 px-1 pt-2">
         <h1 className="text-3xl font-extrabold tracking-tight text-white leading-tight">

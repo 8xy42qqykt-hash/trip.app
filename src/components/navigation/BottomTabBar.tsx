@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   PaperPlaneTilt,
   ShoppingCart,
@@ -13,13 +13,34 @@ interface BottomTabBarProps {
   activeTab: TabKey;
   onChangeTab: (tab: TabKey) => void;
   isHidden?: boolean;
+  hidden?: boolean;
 }
 
 export const BottomTabBar: React.FC<BottomTabBarProps> = ({
   activeTab,
   onChangeTab,
   isHidden = false,
+  hidden = false,
 }) => {
+  // Listen directly to keyboard/input-focus events to guarantee closing on every device immediately
+  const [eventHidden, setEventHidden] = useState(false);
+
+  useEffect(() => {
+    const handleKbToggle = (e: any) => {
+      const open = Boolean(e?.detail?.isOpen);
+      setEventHidden(open);
+    };
+
+    window.addEventListener('trip:keyboard-toggle', handleKbToggle);
+    return () => {
+      window.removeEventListener('trip:keyboard-toggle', handleKbToggle);
+    };
+  }, []);
+
+  if (isHidden || hidden || eventHidden) {
+    return null;
+  }
+
   const tabs: { key: TabKey; label: string; Icon: React.ComponentType<any> }[] = [
     { key: 'messages', label: 'Messages', Icon: PaperPlaneTilt },
     { key: 'groceries', label: 'Groceries', Icon: ShoppingCart },
@@ -28,22 +49,17 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
     { key: 'settings', label: 'Settings', Icon: Gear },
   ];
 
-  if (isHidden) {
-    return null;
-  }
-
   return (
     <nav
       role="navigation"
       aria-label="Bottom Navigation"
       style={{
-        backdropFilter: 'blur(32px) saturate(200%)',
-        WebkitBackdropFilter: 'blur(32px) saturate(200%)',
+        backgroundColor: '#000000',
       }}
-      className="fixed bottom-0 left-0 right-0 z-40 bg-[#161618]/95 border-t border-white/[0.08] select-none pointer-events-auto"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-black select-none pointer-events-auto"
     >
-      {/* Completely flush bar with no empty space under, background covers safe area */}
-      <div className="max-w-lg mx-auto grid grid-cols-5 items-center px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      {/* Completely flush bar with pure black bg and no empty space under nav buttons */}
+      <div className="max-w-lg mx-auto grid grid-cols-5 items-center px-1 pt-0.5 pb-[env(safe-area-inset-bottom,0px)]">
         {tabs.map(({ key, label, Icon }) => {
           const isActive = activeTab === key;
           return (
@@ -51,17 +67,17 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
               key={key}
               type="button"
               onClick={() => onChangeTab(key)}
-              className="flex flex-col items-center justify-center py-1 min-h-[50px] w-full cursor-pointer active-press group"
+              className="flex flex-col items-center justify-center py-1 min-h-[44px] w-full cursor-pointer active-press group"
             >
               <Icon
-                size={27}
+                size={25}
                 weight={isActive ? 'fill' : 'regular'}
-                className={`transition-colors duration-200 ${
+                className={`transition-colors duration-150 ${
                   isActive ? 'text-[#0A84FF]' : 'text-slate-400'
                 }`}
               />
               <span
-                className={`text-[12px] tracking-tight mt-1 transition-colors duration-200 ${
+                className={`text-[11px] tracking-tight mt-0.5 transition-colors duration-150 ${
                   isActive ? 'text-[#0A84FF] font-bold' : 'text-slate-400 font-medium'
                 }`}
               >

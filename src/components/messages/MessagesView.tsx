@@ -10,7 +10,7 @@ import {
 } from '@phosphor-icons/react';
 import { useTrip } from '../../context/TripContext';
 import { useAuth } from '../../context/AuthContext';
-import { Message } from '../../types';
+import { Message, TripMember } from '../../types';
 import { ChatBubble } from './ChatBubble';
 import { PinnedPolls } from './PinnedPolls';
 import { PollSheet } from './PollSheet';
@@ -22,10 +22,14 @@ import { uploadAsset } from '../../lib/supabase';
 
 interface MessagesViewProps {
   onKeyboardStateChange?: (isOpen: boolean) => void;
+  initialMention?: string;
+  onClearInitialMention?: () => void;
 }
 
 export const MessagesView: React.FC<MessagesViewProps> = ({
   onKeyboardStateChange,
+  initialMention,
+  onClearInitialMention,
 }) => {
   const {
     currentTrip,
@@ -40,9 +44,10 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     endPoll,
     exitTrip,
   } = useTrip();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
   const [inputText, setInputText] = useState('');
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [isPollSheetOpen, setIsPollSheetOpen] = useState(false);
@@ -52,10 +57,34 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   // Virtual keyboard tracking for mobile
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const isInputFocusedRef = useRef(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-mention if passed from members list or settings
+  useEffect(() => {
+    if (initialMention) {
+      const mentionStr = `@${initialMention} `;
+      setInputText(mentionStr);
+      if (onClearInitialMention) {
+        onClearInitialMention();
+      }
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const len = mentionStr.length;
+          textareaRef.current.setSelectionRange(len, len);
+          textareaRef.current.style.height = 'auto';
+          const scrollH = textareaRef.current.scrollHeight;
+          textareaRef.current.style.height = `${Math.max(40, Math.min(scrollH, 130))}px`;
+        }
+        isInputFocusedRef.current = true;
+        notifyKeyboard(true);
+      }, 80);
+    }
+  }, [initialMention, onClearInitialMention]);
 
   const notifyKeyboard = (open: boolean) => {
     setIsKeyboardOpen(open);
@@ -66,6 +95,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   };
 
   const handleFocus = () => {
+    isInputFocusedRef.current = true;
     notifyKeyboard(true);
     const vv = window.visualViewport;
     if (vv) {
@@ -79,6 +109,11 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 
   const handleBlur = () => {
     setTimeout(() => {
+      // If the activeElement is still textarea, do NOT close!
+      if (document.activeElement === textareaRef.current) {
+        return;
+      }
+      isInputFocusedRef.current = false;
       const vv = window.visualViewport;
       if (!vv || window.innerHeight - vv.height <= 40) {
         notifyKeyboard(false);
@@ -92,16 +127,24 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     if (typeof window === 'undefined') return;
 
     const handleViewportChange = () => {
+      const isFocused = document.activeElement === textareaRef.current || isInputFocusedRef.current;
       const vv = window.visualViewport;
-      if (!vv) return;
-      const diff = window.innerHeight - vv.height;
-      const isOpen = diff > 40;
+      const diff = vv ? window.innerHeight - vv.height : 0;
+
+      // On iPhone / mobile: If the input is focused, the keyboard IS open!
+      const isOpen = isFocused || diff > 40;
       setIsKeyboardOpen(isOpen);
       if (onKeyboardStateChange) {
         onKeyboardStateChange(isOpen);
       }
       window.dispatchEvent(new CustomEvent('trip:keyboard-toggle', { detail: { isOpen } }));
-      setKeyboardHeight(isOpen ? diff : 0);
+
+      if (diff > 40) {
+        setKeyboardHeight(diff);
+      } else if (!isOpen) {
+        setKeyboardHeight(0);
+      }
+
       if (isOpen) {
         setTimeout(scrollToBottom, 60);
       }
@@ -110,13 +153,11 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     window.visualViewport?.addEventListener('resize', handleViewportChange);
     window.visualViewport?.addEventListener('scroll', handleViewportChange);
     window.addEventListener('resize', handleViewportChange);
-    handleViewportChange();
 
     return () => {
       window.visualViewport?.removeEventListener('resize', handleViewportChange);
       window.visualViewport?.removeEventListener('scroll', handleViewportChange);
       window.removeEventListener('resize', handleViewportChange);
-      notifyKeyboard(false);
     };
   }, [onKeyboardStateChange]);
 
@@ -134,6 +175,17 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setInputText(val);
+
+    // Check for @mention query at cursor position
+    const cursorPos = e.target.selectionStart || val.length;
+    const textBeforeCursor = val.slice(0, cursorPos);
+    const match = textBeforeCursor.match(/(?:^|\s)@([a-zA-Z0-9_\s]{0,20})$/);
+    if (match) {
+      setMentionQuery(match[1]);
+    } else {
+      setMentionQuery(null);
+    }
+
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = 'auto';
@@ -143,15 +195,50 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     }
   };
 
+  const handleSelectMention = (member: TripMember) => {
+    const name = member.profile?.display_name || 'Member';
+    const textarea = textareaRef.current;
+    const cursorPos = textarea ? textarea.selectionStart : inputText.length;
+    const textBeforeCursor = inputText.slice(0, cursorPos);
+    const textAfterCursor = inputText.slice(cursorPos);
+
+    // Replace the trailing @... with @Name 
+    const replacedBefore = textBeforeCursor.replace(/(?:^|\s)@([a-zA-Z0-9_\s]{0,20})$/, (match) => {
+      const leadingSpace = match.startsWith(' ') ? ' ' : '';
+      return `${leadingSpace}@${name} `;
+    });
+
+    const newText = replacedBefore + textAfterCursor;
+    setInputText(newText);
+    setMentionQuery(null);
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        const newPos = replacedBefore.length;
+        textareaRef.current.setSelectionRange(newPos, newPos);
+        textareaRef.current.style.height = 'auto';
+        const scrollH = textareaRef.current.scrollHeight;
+        textareaRef.current.style.height = `${Math.max(40, Math.min(scrollH, 130))}px`;
+      }
+    }, 20);
+  };
+
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const clean = inputText.trim();
     if (!clean) return;
 
     setInputText('');
+    setMentionQuery(null);
     if (textareaRef.current) {
       textareaRef.current.style.height = '40px';
+      // Keep textarea focused so user can keep typing and keyboard stays up!
+      textareaRef.current.focus();
     }
+    isInputFocusedRef.current = true;
+    notifyKeyboard(true);
+
     const replyId = replyingTo?.id;
     setReplyingTo(null);
 
@@ -160,9 +247,38 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape') {
+      setMentionQuery(null);
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+      // Ensure focus remains on textarea
+      textareaRef.current?.focus();
+    }
+  };
+
+  // Only dismiss keyboard if user taps empty space on the message view
+  const handleEmptySpaceTap = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('button') ||
+      target.closest('textarea') ||
+      target.closest('input') ||
+      target.closest('.chat-bubble-touch') ||
+      target.closest('.reaction-bar') ||
+      target.closest('.action-menu') ||
+      target.closest('.mention-autocomplete-item')
+    ) {
+      return;
+    }
+    if (isInputFocusedRef.current || document.activeElement === textareaRef.current) {
+      isInputFocusedRef.current = false;
+      textareaRef.current?.blur();
+      notifyKeyboard(false);
+      setKeyboardHeight(0);
+      setMentionQuery(null);
     }
   };
 
@@ -196,7 +312,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
       await sendMessage('', url, replyId);
       setTimeout(scrollToBottom, 50);
     } catch (err) {
-      console.warn('Camera upload error:', err);
+      console.warn('Camera capture error:', err);
     } finally {
       setUploadingImage(false);
     }
@@ -206,42 +322,52 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     toggleReaction(messageId, 'Heart');
   };
 
-  // Group messages logic
-  const messageGroups: {
+  if (!currentTrip) {
+    return null;
+  }
+
+  // Calculate day separators & consecutive grouping
+  const messageGroups: Array<{
     message: Message;
     isFirstInGroup: boolean;
     isLastInGroup: boolean;
     showDaySeparator: boolean;
     dayLabel: string;
-  }[] = [];
+  }> = [];
 
   for (let i = 0; i < messages.length; i++) {
     const curr = messages[i];
-    const prev = messages[i - 1];
-    const next = messages[i + 1];
+    const prev = i > 0 ? messages[i - 1] : null;
+    const next = i < messages.length - 1 ? messages[i + 1] : null;
 
-    const currDate = new Date(curr.created_at).toDateString();
-    const prevDate = prev ? new Date(prev.created_at).toDateString() : null;
-    const showDaySeparator = currDate !== prevDate;
-    const dayLabel = formatMessageDaySeparator(curr.created_at);
+    let showDaySeparator = false;
+    let dayLabel = '';
 
-    const isPrevSame =
-      prev &&
-      prev.user_id === curr.user_id &&
-      !showDaySeparator &&
-      Math.abs(new Date(curr.created_at).getTime() - new Date(prev.created_at).getTime()) < 180000;
+    if (!prev) {
+      showDaySeparator = true;
+      dayLabel = formatMessageDaySeparator(curr.created_at);
+    } else {
+      const prevDate = new Date(prev.created_at).toDateString();
+      const currDate = new Date(curr.created_at).toDateString();
+      if (prevDate !== currDate) {
+        showDaySeparator = true;
+        dayLabel = formatMessageDaySeparator(curr.created_at);
+      }
+    }
 
-    const nextDate = next ? new Date(next.created_at).toDateString() : null;
-    const isNextSame =
+    const sameSenderPrev = prev && prev.user_id === curr.user_id && !showDaySeparator;
+    const sameSenderNext =
       next &&
       next.user_id === curr.user_id &&
-      currDate === nextDate &&
-      Math.abs(new Date(next.created_at).getTime() - new Date(curr.created_at).getTime()) < 180000;
+      new Date(next.created_at).toDateString() === new Date(curr.created_at).toDateString();
+
+    const isFirstInGroup = !sameSenderPrev;
+    const isLastInGroup = !sameSenderNext;
 
     messageGroups.push({
       message: curr,
-      isFirstInGroup: !isPrevSame,
-      isLastInGroup: !isNextSame,
+      isFirstInGroup,
+      isLastInGroup,
       showDaySeparator,
       dayLabel,
     });
@@ -249,79 +375,73 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 
   const hasOpenPolls = polls.some((p) => !p.is_closed);
 
+  // Filter mention candidate members
+  const mentionCandidates =
+    mentionQuery !== null
+      ? tripMembers
+          .filter((m) => {
+            const name = m.profile?.display_name || '';
+            if (!mentionQuery.trim()) return true;
+            return name.toLowerCase().includes(mentionQuery.toLowerCase());
+          })
+          .slice(0, 5)
+      : [];
+
   return (
-    <div className="flex flex-col h-full w-full max-w-lg mx-auto relative bg-black overflow-hidden select-none">
-      {/* Top bar with Trip info */}
-      <header
+    <div className="h-full w-full flex flex-col bg-black text-white overflow-hidden relative select-none">
+      {/* Top Header - Trip Title & Exit Button */}
+      <div
         style={{
-          backdropFilter: 'blur(28px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+          backdropFilter: 'blur(20px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
         }}
-        className="shrink-0 min-h-[4.75rem] pt-[max(0.6rem,env(safe-area-inset-top))] pb-3 px-4 flex items-center justify-between z-20 bg-[#1c1c1e]/85 border-b border-white/[0.08] select-none transition-colors"
+        className="shrink-0 h-14 border-b border-white/[0.08] flex items-center justify-between px-3.5 z-20 pt-safe"
       >
-        {/* Left: Back to Trips */}
         <button
           type="button"
           onClick={exitTrip}
-          className="min-h-[44px] flex items-center gap-1 text-sm font-semibold text-[#0A84FF] active-press cursor-pointer py-1.5 pr-2 -ml-2"
-          title="Exit to My Trips"
+          className="flex items-center gap-1 text-[#0A84FF] text-sm font-semibold active:opacity-70 cursor-pointer -ml-1 py-1 px-2 rounded-lg"
+          title="Return to Trips"
         >
-          <CaretLeft size={18} weight="bold" />
+          <CaretLeft size={20} weight="bold" />
           <span>Trips</span>
         </button>
 
-        {/* Center: Group Picture Stack and Trip Name */}
-        <div className="flex flex-col items-center justify-center">
-          <div className="flex -space-x-2 items-center justify-center mb-1">
-            {tripMembers.length > 0 ? (
-              tripMembers.slice(0, 3).map((m, idx) => (
-                <div
-                  key={m.user_id}
-                  className="rounded-full ring-2 ring-[#1c1c1e] overflow-hidden"
-                  style={{ zIndex: 10 - idx }}
-                >
-                  <Avatar
-                    name={m.profile?.display_name}
-                    avatarUrl={m.profile?.avatar_url}
-                    color={m.profile?.color}
-                    size={28}
-                  />
-                </div>
-              ))
-            ) : (
-              <Avatar
-                name={currentTrip?.name || 'Trip'}
-                color="#0A84FF"
-                size={28}
-              />
-            )}
-          </div>
-          <span className="text-[14px] font-bold text-white max-w-[190px] truncate leading-tight text-center">
-            {currentTrip?.name || 'Trip'}
+        <div className="flex flex-col items-center max-w-[200px] truncate text-center">
+          <span className="text-base font-bold text-white tracking-tight truncate">
+            {currentTrip.name}
+          </span>
+          <span className="text-[11px] text-slate-400 font-medium -mt-0.5">
+            {tripMembers.length} {tripMembers.length === 1 ? 'member' : 'members'}
           </span>
         </div>
 
-        {/* Right side invite code */}
-        <div className="text-xs font-mono font-semibold text-slate-400 px-1">
-          {currentTrip?.invite_code}
+        <div className="w-14 flex justify-end">
+          <Avatar
+            name={profile?.display_name || user?.email}
+            size={32}
+          />
         </div>
-      </header>
+      </div>
 
-      {/* Floating Pinned Polls Overlay (Lower down) */}
+      {/* Pinned Polls Banner */}
       <PinnedPolls
         polls={polls}
         onVote={votePoll}
         onEndPoll={endPoll}
       />
 
-      {/* Messages Scroll Area */}
-      <CustomScrollArea scrollRef={scrollRef} className="flex-1 px-4">
+      {/* Chat Messages List */}
+      <CustomScrollArea className="flex-1 overflow-hidden">
         <div
-          className={`flex flex-col justify-start min-h-full ${hasOpenPolls ? 'pt-28' : 'pt-4'}`}
+          ref={scrollRef}
+          onClick={handleEmptySpaceTap}
+          className={`flex flex-col justify-start min-h-full px-4 ${hasOpenPolls ? 'pt-28' : 'pt-4'}`}
           style={{
             paddingBottom: isKeyboardOpen
-              ? `${Math.max(keyboardHeight, 0) + 84}px`
-              : 'calc(env(safe-area-inset-bottom, 0px) + 8.5rem)',
+              ? `${(keyboardHeight > 40 ? keyboardHeight : 0) + 76}px`
+              : 'calc(env(safe-area-inset-bottom, 0px) + 116px)',
           }}
         >
           {messageGroups.map(({ message, isFirstInGroup, isLastInGroup, showDaySeparator, dayLabel }) => {
@@ -363,8 +483,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
             backdropFilter: 'blur(24px) saturate(180%)',
             WebkitBackdropFilter: 'blur(24px) saturate(180%)',
             bottom: isKeyboardOpen
-              ? `${Math.max(keyboardHeight, 0) + 72}px`
-              : 'calc(env(safe-area-inset-bottom, 0px) + 8.75rem)',
+              ? `${(keyboardHeight > 40 ? keyboardHeight : 0) + 64}px`
+              : 'calc(env(safe-area-inset-bottom, 0px) + 108px)',
           }}
           className="absolute left-3.5 right-3.5 z-30 px-4 py-2.5 flex items-center justify-between bg-[#202024]/90 border border-white/[0.12] rounded-[20px] text-xs text-white shadow-lg animate-spring-in transition-[bottom] duration-150 ease-out"
         >
@@ -388,8 +508,10 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
       <div
         style={{
           bottom: isKeyboardOpen
-            ? `${Math.max(keyboardHeight, 0) + 12}px`
-            : 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)',
+            ? keyboardHeight > 40
+              ? `${keyboardHeight + 8}px`
+              : 'calc(env(safe-area-inset-bottom, 0px) + 8px)'
+            : 'calc(env(safe-area-inset-bottom, 0px) + 54px)',
         }}
         className="absolute left-3.5 right-3.5 z-30 pointer-events-auto transition-[bottom] duration-150 ease-out"
       >
@@ -401,9 +523,53 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
           className="hidden"
         />
 
-        {/* items-end: The + button and send button STAY ANCHORED AT THE BOTTOM when textarea expands */}
-        <form onSubmit={handleSend} className="relative flex items-end gap-2.5">
-          {/* Floating Plus Toggle Button - stays anchored at bottom */}
+        {/* Member Mention Autocomplete Popup */}
+        {mentionQuery !== null && mentionCandidates.length > 0 && (
+          <div
+            style={{
+              backdropFilter: 'blur(30px) saturate(190%)',
+              WebkitBackdropFilter: 'blur(30px) saturate(190%)',
+              backgroundColor: 'rgba(24, 24, 28, 0.95)',
+            }}
+            className="mb-2 max-h-48 overflow-y-auto border border-white/[0.14] rounded-[20px] p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] animate-calm-fade-in divide-y divide-white/[0.06]"
+          >
+            <div className="px-3 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+              Mention Member
+            </div>
+            {mentionCandidates.map((m) => (
+              <button
+                key={m.user_id}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault(); // Prevent blur of textarea
+                }}
+                onClick={() => handleSelectMention(m)}
+                className="mention-autocomplete-item w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/10 active:bg-white/15 cursor-pointer transition-colors text-left"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Avatar
+                    name={m.profile?.display_name}
+                    avatarUrl={m.profile?.avatar_url}
+                    color={m.profile?.color}
+                    size={28}
+                  />
+                  <div className="truncate">
+                    <div className="text-sm font-semibold text-white truncate">
+                      {m.profile?.display_name || 'Member'}
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[11px] text-sky-400 font-mono shrink-0 ml-2">
+                  @{m.profile?.display_name || 'member'}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* items-end: The + button and send button stay anchored at the bottom line when textarea expands */}
+        <form onSubmit={handleSend} className="relative flex items-end gap-2">
+          {/* Floating Plus Toggle Button */}
           <button
             type="button"
             disabled={uploadingImage}
@@ -418,7 +584,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
               backdropFilter: 'blur(24px) saturate(180%)',
               WebkitBackdropFilter: 'blur(24px) saturate(180%)',
             }}
-            className={`w-12 h-12 rounded-full flex items-center justify-center cursor-pointer shadow-[0_4px_16px_rgba(0,0,0,0.3)] border border-white/[0.12] active-press shrink-0 self-end mb-0.5 transition-colors ${
+            className={`w-[46px] h-[46px] min-w-[46px] min-h-[46px] rounded-full flex items-center justify-center cursor-pointer shadow-[0_4px_16px_rgba(0,0,0,0.3)] border border-white/[0.12] active-press shrink-0 self-end transition-colors ${
               isPlusMenuOpen
                 ? 'bg-white/25 text-white'
                 : 'bg-[#222226]/90 text-white hover:bg-[#2a2a2e]'
@@ -495,7 +661,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
               backdropFilter: 'blur(28px) saturate(180%)',
               WebkitBackdropFilter: 'blur(28px) saturate(180%)',
             }}
-            className="flex-1 min-w-0 flex items-center min-h-[46px] bg-[#222226]/90 border border-white/[0.12] rounded-[24px] px-4 py-1 shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition-all duration-150 ease-out"
+            className="flex-1 min-w-0 flex items-center min-h-[46px] bg-[#222226]/90 border border-white/[0.12] rounded-[23px] px-3.5 py-0.5 shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition-all duration-150 ease-out"
           >
             <textarea
               ref={textareaRef}
@@ -513,23 +679,32 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
               onKeyDown={handleKeyDown}
               onFocus={handleFocus}
               onBlur={handleBlur}
-              className="flex-1 bg-transparent text-white placeholder:text-slate-400 text-[17px] resize-none outline-none pt-2.5 pb-2 leading-[1.38] max-h-36 overflow-y-auto transition-[height] duration-150 ease-out"
+              className="flex-1 bg-transparent text-white placeholder:text-slate-400 text-[16px] resize-none outline-none py-2.5 leading-[1.38] max-h-32 overflow-y-auto"
               style={{ minHeight: '40px', height: '40px' }}
             />
           </div>
 
           {/* Send Button - stays anchored at bottom */}
           <div
-            className={`shrink-0 self-end mb-0.5 flex items-center justify-center transition-all duration-250 ease-out ${
+            className={`shrink-0 self-end flex items-center justify-center transition-all duration-200 ease-out ${
               inputText.trim()
-                ? 'w-12 opacity-100 scale-100 translate-x-0'
+                ? 'w-[46px] opacity-100 scale-100 translate-x-0'
                 : 'w-0 opacity-0 scale-50 translate-x-2 pointer-events-none'
             }`}
           >
             <button
               type="submit"
               disabled={!inputText.trim()}
-              className="w-12 h-12 rounded-full bg-[#0A84FF] text-white flex items-center justify-center cursor-pointer shadow-lg active:scale-90 transition-transform"
+              onMouseDown={(e) => {
+                // Prevent focus shift away from textarea
+                e.preventDefault();
+              }}
+              onTouchStart={(e) => {
+                // Prevent focus shift away from textarea on touch devices
+                e.preventDefault();
+                handleSend();
+              }}
+              className="w-[46px] h-[46px] min-w-[46px] min-h-[46px] rounded-full bg-[#0A84FF] text-white flex items-center justify-center cursor-pointer shadow-lg active:scale-90 transition-transform"
             >
               <ArrowUp size={20} weight="bold" />
             </button>
