@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en" class="dark" style="background-color: #000000; color: #ffffff; color-scheme: dark;">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content" />
@@ -13,12 +13,81 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Trailing slash redirect for GitHub Pages project subpaths (e.g. /trip.app -> /trip.app/) -->
+    <script>
+      (function() {
+        try {
+          var p = window.location.pathname;
+          // If on a project page like /trip.app without trailing slash, redirect with trailing slash
+          // so relative assets are requested from /trip.app/assets/... instead of domain root /assets/...
+          if (p && !p.endsWith('/') && !p.endsWith('.html')) {
+            var segments = p.split('/').filter(Boolean);
+            if (segments.length >= 1) {
+              var last = segments[segments.length - 1];
+              if (!last.includes('.htm')) {
+                window.location.replace(p + '/' + window.location.search + window.location.hash);
+              }
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      })();
+    </script>
+
     <link rel="icon" type="image/png" href="./icon.png" />
     <link rel="shortcut icon" type="image/png" href="./icon.png" />
     <link rel="apple-touch-icon" href="./pwa-192x192.png" />
+
+    <style>
+      html, body {
+        background-color: #000000 !important;
+        color: #ffffff;
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      #initial-splash {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #000000;
+        z-index: 99999;
+      }
+      .splash-icon {
+        width: 64px;
+        height: 64px;
+        border-radius: 26px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: splashPulse 1.5s ease-in-out infinite;
+      }
+      @keyframes splashPulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.6; transform: scale(0.96); }
+      }
+    </style>
   </head>
-  <body class="overscroll-none select-none antialiased bg-black text-white m-0 p-0">
-    <div id="root"></div>
-    <script type="module" src="./src/main.tsx"></script>
+  <body class="overscroll-none select-none antialiased bg-black text-white m-0 p-0" style="background-color: #000000; color: #ffffff;">
+    <div id="root">
+      <div id="initial-splash">
+        <div class="splash-icon">
+          <svg width="32" height="32" viewBox="0 0 256 256" fill="#ffffff" style="margin-left: -2px; margin-top: 2px;">
+            <path d="M231.87,114l-168-95.89A16,16,0,0,0,40.92,37.34L71.55,128,40.92,218.67A16,16,0,0,0,56,240a16.15,16.15,0,0,0,7.93-2.1l167.94-96a16,16,0,0,0,0-27.86ZM56,224a.09.09,0,0,0,0,0L84.8,136H144a8,8,0,0,0,0-16H84.8L56,32l168,96Z"></path>
+          </svg>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

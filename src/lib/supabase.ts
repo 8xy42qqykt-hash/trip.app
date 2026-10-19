@@ -16,8 +16,12 @@ try {
   // Ignore
 }
 
-export const supabaseUrl = (envUrl || storedUrl || '').trim();
-export const supabaseAnonKey = (envKey || storedKey || '').trim();
+const defaultUrl = 'https://ujjxhhjthwjmmgrbqkur.supabase.co';
+const defaultAnonKey =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqanhoaGp0aHdqbW1ncmJxa3VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzNTA3MTgsImV4cCI6MjEwNzkyNjcxOH0.HyKOa6Y6CeVYig1X7bK798BDf241aRuo41dkiM0ygJA';
+
+export const supabaseUrl = (envUrl || storedUrl || defaultUrl).trim();
+export const supabaseAnonKey = (envKey || storedKey || defaultAnonKey).trim();
 
 export const isCloudSupabaseConfigured = Boolean(
   supabaseUrl &&
