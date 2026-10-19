@@ -54,8 +54,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // Virtual keyboard tracking for mobile
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  // Virtual keyboard tracking for mobile (using accurate visualViewport bottom offset)
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const isInputFocusedRef = useRef(false);
 
@@ -73,7 +73,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
       }
       setTimeout(() => {
         if (textareaRef.current) {
-          textareaRef.current.focus();
+          textareaRef.current.focus({ preventScroll: true });
           const len = mentionStr.length;
           textareaRef.current.setSelectionRange(len, len);
           textareaRef.current.style.height = 'auto';
@@ -94,17 +94,31 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     window.dispatchEvent(new CustomEvent('trip:keyboard-toggle', { detail: { isOpen: open } }));
   };
 
+  const calcKeyboardOffset = () => {
+    if (typeof window === 'undefined') return 0;
+    const vv = window.visualViewport;
+    if (!vv) return 0;
+    // Difference between window layout bottom and visual viewport bottom
+    const offset = window.innerHeight - (vv.offsetTop + vv.height);
+    return Math.max(0, Math.round(offset));
+  };
+
   const handleFocus = () => {
     isInputFocusedRef.current = true;
     notifyKeyboard(true);
-    const vv = window.visualViewport;
-    if (vv) {
-      const diff = window.innerHeight - vv.height;
-      if (diff > 40) {
-        setKeyboardHeight(diff);
-      }
+    // Pin page layout scroll to top on iOS so the viewport doesn't shift unexpectedly
+    if (window.scrollY !== 0 || window.pageYOffset !== 0) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' as any });
     }
-    setTimeout(scrollToBottom, 60);
+    const offset = calcKeyboardOffset();
+    setKeyboardOffset(offset);
+    setTimeout(() => {
+      if (window.scrollY !== 0 || window.pageYOffset !== 0) {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' as any });
+      }
+      setKeyboardOffset(calcKeyboardOffset());
+      scrollToBottom();
+    }, 60);
   };
 
   const handleBlur = () => {
@@ -114,10 +128,10 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
         return;
       }
       isInputFocusedRef.current = false;
-      const vv = window.visualViewport;
-      if (!vv || window.innerHeight - vv.height <= 40) {
+      const offset = calcKeyboardOffset();
+      if (offset <= 20) {
         notifyKeyboard(false);
-        setKeyboardHeight(0);
+        setKeyboardOffset(0);
       }
     }, 120);
   };
@@ -127,26 +141,25 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     if (typeof window === 'undefined') return;
 
     const handleViewportChange = () => {
-      const isFocused = document.activeElement === textareaRef.current || isInputFocusedRef.current;
-      const vv = window.visualViewport;
-      const diff = vv ? window.innerHeight - vv.height : 0;
+      if (window.scrollY !== 0 || window.pageYOffset !== 0) {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' as any });
+      }
 
-      // On iPhone / mobile: If the input is focused, the keyboard IS open!
-      const isOpen = isFocused || diff > 40;
+      const offset = calcKeyboardOffset();
+      const isFocused = document.activeElement === textareaRef.current || isInputFocusedRef.current;
+      const isOpen = isFocused || offset > 30;
+
       setIsKeyboardOpen(isOpen);
       if (onKeyboardStateChange) {
         onKeyboardStateChange(isOpen);
       }
       window.dispatchEvent(new CustomEvent('trip:keyboard-toggle', { detail: { isOpen } }));
 
-      if (diff > 40) {
-        setKeyboardHeight(diff);
-      } else if (!isOpen) {
-        setKeyboardHeight(0);
-      }
-
       if (isOpen) {
-        setTimeout(scrollToBottom, 60);
+        setKeyboardOffset(offset);
+        setTimeout(scrollToBottom, 50);
+      } else {
+        setKeyboardOffset(0);
       }
     };
 
@@ -234,7 +247,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     if (textareaRef.current) {
       textareaRef.current.style.height = '40px';
       // Keep textarea focused so user can keep typing and keyboard stays up!
-      textareaRef.current.focus();
+      textareaRef.current.focus({ preventScroll: true });
     }
     isInputFocusedRef.current = true;
     notifyKeyboard(true);
@@ -254,8 +267,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
-      // Ensure focus remains on textarea
-      textareaRef.current?.focus();
+      // Ensure focus remains on textarea without scrolling page
+      textareaRef.current?.focus({ preventScroll: true });
     }
   };
 
@@ -277,7 +290,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
       isInputFocusedRef.current = false;
       textareaRef.current?.blur();
       notifyKeyboard(false);
-      setKeyboardHeight(0);
+      setKeyboardOffset(0);
       setMentionQuery(null);
     }
   };
@@ -389,39 +402,42 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 
   return (
     <div className="h-full w-full flex flex-col bg-black text-white overflow-hidden relative select-none">
-      {/* Top Header - Trip Title & Exit Button */}
+      {/* Top Header - Trip Title & Exit Button (Extended cleanly through top danger zone) */}
       <div
         style={{
-          backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          backgroundColor: '#000000',
+          backdropFilter: 'blur(24px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
         }}
-        className="shrink-0 h-14 border-b border-white/[0.08] flex items-center justify-between px-3.5 z-20 pt-safe"
+        className="shrink-0 w-full border-b border-white/[0.08] z-20"
       >
-        <button
-          type="button"
-          onClick={exitTrip}
-          className="flex items-center gap-1 text-[#0A84FF] text-sm font-semibold active:opacity-70 cursor-pointer -ml-1 py-1 px-2 rounded-lg"
-          title="Return to Trips"
-        >
-          <CaretLeft size={20} weight="bold" />
-          <span>Trips</span>
-        </button>
+        <div className="h-14 w-full flex items-center justify-between px-3.5">
+          <button
+            type="button"
+            onClick={exitTrip}
+            className="flex items-center gap-1 text-[#0A84FF] text-sm font-semibold active:opacity-70 cursor-pointer -ml-1 py-1 px-2 rounded-lg"
+            title="Return to Trips"
+          >
+            <CaretLeft size={20} weight="bold" />
+            <span>Trips</span>
+          </button>
 
-        <div className="flex flex-col items-center max-w-[200px] truncate text-center">
-          <span className="text-base font-bold text-white tracking-tight truncate">
-            {currentTrip.name}
-          </span>
-          <span className="text-[11px] text-slate-400 font-medium -mt-0.5">
-            {tripMembers.length} {tripMembers.length === 1 ? 'member' : 'members'}
-          </span>
-        </div>
+          <div className="flex flex-col items-center max-w-[200px] truncate text-center">
+            <span className="text-base font-bold text-white tracking-tight truncate">
+              {currentTrip.name}
+            </span>
+            <span className="text-[11px] text-slate-400 font-medium -mt-0.5">
+              {tripMembers.length} {tripMembers.length === 1 ? 'member' : 'members'}
+            </span>
+          </div>
 
-        <div className="w-14 flex justify-end">
-          <Avatar
-            name={profile?.display_name || user?.email}
-            size={32}
-          />
+          <div className="w-14 flex justify-end">
+            <Avatar
+              name={profile?.display_name || user?.email}
+              size={32}
+            />
+          </div>
         </div>
       </div>
 
@@ -437,11 +453,11 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
         <div
           ref={scrollRef}
           onClick={handleEmptySpaceTap}
-          className={`flex flex-col justify-start min-h-full px-4 ${hasOpenPolls ? 'pt-28' : 'pt-4'}`}
+          className={`flex flex-col justify-start min-h-full px-4 ${hasOpenPolls ? 'pt-24' : 'pt-3'}`}
           style={{
             paddingBottom: isKeyboardOpen
-              ? `${(keyboardHeight > 40 ? keyboardHeight : 0) + 76}px`
-              : 'calc(env(safe-area-inset-bottom, 0px) + 116px)',
+              ? `${Math.max(76, keyboardOffset + 66)}px`
+              : '110px',
           }}
         >
           {messageGroups.map(({ message, isFirstInGroup, isLastInGroup, showDaySeparator, dayLabel }) => {
@@ -483,8 +499,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
             backdropFilter: 'blur(24px) saturate(180%)',
             WebkitBackdropFilter: 'blur(24px) saturate(180%)',
             bottom: isKeyboardOpen
-              ? `${(keyboardHeight > 40 ? keyboardHeight : 0) + 64}px`
-              : 'calc(env(safe-area-inset-bottom, 0px) + 108px)',
+              ? `${Math.max(8, keyboardOffset + 6) + 54}px`
+              : '108px',
           }}
           className="absolute left-3.5 right-3.5 z-30 px-4 py-2.5 flex items-center justify-between bg-[#202024]/90 border border-white/[0.12] rounded-[20px] text-xs text-white shadow-lg animate-spring-in transition-[bottom] duration-150 ease-out"
         >
@@ -508,10 +524,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
       <div
         style={{
           bottom: isKeyboardOpen
-            ? keyboardHeight > 40
-              ? `${keyboardHeight + 8}px`
-              : 'calc(env(safe-area-inset-bottom, 0px) + 8px)'
-            : 'calc(env(safe-area-inset-bottom, 0px) + 54px)',
+            ? `${Math.max(8, keyboardOffset + 6)}px`
+            : '54px',
         }}
         className="absolute left-3.5 right-3.5 z-30 pointer-events-auto transition-[bottom] duration-150 ease-out"
       >

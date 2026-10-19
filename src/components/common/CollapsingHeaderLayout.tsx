@@ -37,42 +37,46 @@ export const CollapsingHeaderLayout: React.FC<CollapsingHeaderLayoutProps> = ({
       {/* Sticky top bar */}
       <header
         style={{
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          backgroundColor: '#000000',
           backdropFilter: isScrolled ? 'blur(28px) saturate(180%)' : 'none',
           WebkitBackdropFilter: isScrolled ? 'blur(28px) saturate(180%)' : 'none',
         }}
-        className={`shrink-0 min-h-[50px] pt-safe px-4 flex items-center justify-between z-20 transition-all duration-200 ${
+        className={`shrink-0 z-20 transition-all duration-200 ${
           isScrolled
-            ? 'bg-[#1c1c1e]/85 border-b border-white/[0.08]'
-            : 'bg-transparent border-b border-transparent'
+            ? 'border-b border-white/[0.08]'
+            : 'border-b border-transparent'
         }`}
       >
-        <div className="w-24 flex items-center">
-          {topBarLeft ? (
-            topBarLeft
-          ) : showBackButton ? (
-            <button
-              type="button"
-              onClick={exitTrip}
-              className="min-h-[44px] flex items-center gap-1 text-sm font-semibold text-[#0A84FF] active-press cursor-pointer py-1.5 pr-2 -ml-2"
-              title="Exit to My Trips"
-            >
-              <CaretLeft size={18} weight="bold" />
-              <span>Trips</span>
-            </button>
-          ) : null}
-        </div>
+        <div className="h-12 px-4 flex items-center justify-between">
+          <div className="w-24 flex items-center">
+            {topBarLeft ? (
+              topBarLeft
+            ) : showBackButton ? (
+              <button
+                type="button"
+                onClick={exitTrip}
+                className="min-h-[44px] flex items-center gap-1 text-sm font-semibold text-[#0A84FF] active-press cursor-pointer py-1.5 pr-2 -ml-2"
+                title="Exit to My Trips"
+              >
+                <CaretLeft size={18} weight="bold" />
+                <span>Trips</span>
+              </button>
+            ) : null}
+          </div>
 
-        {/* Small Title on scroll */}
-        <h2
-          className={`text-base font-bold text-white transition-all duration-200 truncate ${
-            isScrolled ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1.5 pointer-events-none'
-          }`}
-        >
-          {title}
-        </h2>
+          {/* Small Title on scroll */}
+          <h2
+            className={`text-base font-bold text-white transition-all duration-200 truncate ${
+              isScrolled ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1.5 pointer-events-none'
+            }`}
+          >
+            {title}
+          </h2>
 
-        <div className="w-24 flex items-center justify-end">
-          {topBarRight}
+          <div className="w-24 flex items-center justify-end">
+            {topBarRight}
+          </div>
         </div>
       </header>
 
@@ -95,7 +99,7 @@ export const CollapsingHeaderLayout: React.FC<CollapsingHeaderLayoutProps> = ({
         </div>
 
         {/* Content with comfortable clearance above bottom nav bar */}
-        <div className="px-5 pb-32 pb-[max(8rem,calc(env(safe-area-inset-bottom)+6.5rem))]">
+        <div className="px-5 pb-20">
           {children}
         </div>
       </div>

@@ -62,8 +62,13 @@ export const PinnedPolls: React.FC<PinnedPollsProps> = ({
         />
       )}
 
-      {/* Floating Overlay container - Positioned a bit lower down as requested */}
-      <div className="absolute top-[5.6rem] top-[max(5.6rem,calc(env(safe-area-inset-top)+4.6rem))] left-0 right-0 z-30 pointer-events-none px-3.5 pt-1">
+      {/* Floating Overlay container - Positioned below the top safe-area header */}
+      <div
+        style={{
+          top: 'calc(env(safe-area-inset-top, 0px) + 58px)',
+        }}
+        className="absolute left-0 right-0 z-30 pointer-events-none px-3.5 pt-1"
+      >
         <div
           style={{
             backdropFilter: 'blur(28px) saturate(190%)',

@@ -59,7 +59,7 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
       className="fixed bottom-0 left-0 right-0 z-40 bg-black select-none pointer-events-auto"
     >
       {/* Completely flush bar with pure black bg and no empty space under nav buttons */}
-      <div className="max-w-lg mx-auto grid grid-cols-5 items-center px-1 pt-0.5 pb-[env(safe-area-inset-bottom,0px)]">
+      <div className="max-w-lg mx-auto grid grid-cols-5 items-center px-1 pt-1 pb-1.5">
         {tabs.map(({ key, label, Icon }) => {
           const isActive = activeTab === key;
           return (

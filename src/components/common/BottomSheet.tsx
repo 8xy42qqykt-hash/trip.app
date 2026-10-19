@@ -98,7 +98,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
           WebkitBackdropFilter: 'blur(36px) saturate(200%)',
           backgroundColor: 'rgba(24, 24, 28, 0.94)',
         }}
-        className={`relative z-10 w-full max-w-lg mx-auto border-t border-white/[0.14] rounded-t-[32px] pt-3.5 px-6 pb-9 pb-[max(2.5rem,env(safe-area-inset-bottom))] shadow-[0_-16px_48px_rgba(0,0,0,0.7)] ${sheetAnimationClass}`}
+        className={`relative z-10 w-full max-w-lg mx-auto border-t border-white/[0.14] rounded-t-[32px] pt-3.5 px-6 pb-7 shadow-[0_-16px_48px_rgba(0,0,0,0.7)] ${sheetAnimationClass}`}
       >
         {/* Grabber */}
         <div className="w-12 h-1.5 bg-white/30 rounded-full mx-auto mb-4 cursor-grab active:cursor-grabbing" />
